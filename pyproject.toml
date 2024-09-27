@@ -12,6 +12,7 @@ datasets = "^3.0.1"
 pydantic = "^2.9.2"
 torch = "^2.4.1"
 transformers = "^4.45.1"
+accelerate = "^0.34.2"
 rich = "^13.8.1"
 seaborn = "^0.13.2"
 

@@ -5,7 +5,6 @@ import typing
 import pandas
 import pydantic
 import rich
-import seaborn
 
 
 class ValueContainer(pydantic.BaseModel):
@@ -23,14 +22,14 @@ class ValueContainer(pydantic.BaseModel):
     @pydantic.model_serializer()
     def serialize_model(self) -> float:
         return self.mean
-    
+
     def to_series(self, iteration: int = 1) -> pandas.DataFrame:
         return pandas.Series(
             data=self.values,
             index=list(
-                range(1 + len(self.values) * (iteration - 1),  len(self.values) + 1)
+                range(1 + len(self.values) * (iteration - 1), len(self.values) + 1)
             ),
-            name=self.label
+            name=self.label,
         )
 
 
@@ -40,7 +39,9 @@ class Epoch(pydantic.BaseModel):
     train: ValueContainer = ValueContainer(label="train")
     test: ValueContainer = ValueContainer(label="test")
 
-    _start_time: datetime.datetime = pydantic.PrivateAttr(default_factory=datetime.datetime.now)
+    _start_time: datetime.datetime = pydantic.PrivateAttr(
+        default_factory=datetime.datetime.now
+    )
     _end_time: datetime.datetime | None = pydantic.PrivateAttr(default=None)
 
     @pydantic.computed_field
@@ -71,7 +72,9 @@ class Epoch(pydantic.BaseModel):
         )
 
     def to_df(self) -> pandas.DataFrame:
-        return self.train.to_series(self.n).join(self.test.to_series(self.n), how="outer")
+        return self.train.to_series(self.n).join(
+            self.test.to_series(self.n), how="outer"
+        )
 
 
 class Tracker(pydantic.BaseModel):
@@ -85,7 +88,9 @@ class Tracker(pydantic.BaseModel):
     def __del__(self):
         if self.epochs:
             self.to_df().to_json(
-                self.report_path / f"{self.reporth_name}.json", orient="records", indent=4
+                self.report_path / f"{self.reporth_name}.json",
+                orient="records",
+                indent=4,
             )
 
     def add(self, epoch: Epoch) -> None:

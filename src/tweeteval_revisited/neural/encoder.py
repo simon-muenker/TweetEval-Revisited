@@ -26,9 +26,9 @@ class Encoder(torch.nn.Module):
     def tokenize(
         self, batch: typing.List[str]
     ) -> transformers.tokenization_utils_base.BatchEncoding:
-        return self.tokenizer(batch, return_tensors="pt", padding=True, truncation=True).to(
-            next(self.model.parameters()).device
-        )
+        return self.tokenizer(
+            batch, return_tensors="pt", padding=True, truncation=True
+        ).to(next(self.model.parameters()).device)
 
     def prepare(
         self, batch: typing.List[str]

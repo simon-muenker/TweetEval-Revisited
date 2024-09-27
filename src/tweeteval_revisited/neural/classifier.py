@@ -6,15 +6,21 @@ import torch
 
 class ClassifierArgs(pydantic.BaseModel):
     encoder_num_layers: int = 8
-    encoder_layers_config: typing.Dict = dict(nhead=4, batch_first=True, dtype=torch.bfloat16)
+    encoder_layers_config: typing.Dict = dict(
+        nhead=4, batch_first=True, dtype=torch.bfloat16
+    )
 
-    lstm_config: typing.Dict = dict(num_layers=4, batch_first=True, dtype=torch.bfloat16)
+    lstm_config: typing.Dict = dict(
+        num_layers=4, batch_first=True, dtype=torch.bfloat16
+    )
 
     linear_config: typing.Dict = dict(dtype=torch.bfloat16)
 
 
 class Classifier(torch.nn.Module):
-    def __init__(self, input_size: int, out_size: int, args: ClassifierArgs = ClassifierArgs()):
+    def __init__(
+        self, input_size: int, out_size: int, args: ClassifierArgs = ClassifierArgs()
+    ):
         super().__init__()
         self.args: ClassifierArgs = args
 
@@ -30,8 +36,9 @@ class Classifier(torch.nn.Module):
         self.linear = torch.nn.Linear(input_size, out_size, **self.args.linear_config)
 
     def forward(self, batch: torch.Tensor) -> torch.Tensor:
-        output: torch.Tensor = self.encoder(batch)
-        _, (output, _) = self.lstm(output)
-        output = self.linear(output)
+        hidden: torch.Tensor = self.encoder(batch)
+        _, (hidden, _) = self.lstm(hidden)
+        hidden = hidden[-1]
+        hidden = self.linear(hidden)
 
-        return output
+        return hidden
