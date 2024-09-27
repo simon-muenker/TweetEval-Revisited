@@ -1,8 +1,4 @@
-import datasets
+from tweeteval_revisited import neural
+from tweeteval_revisited import pipeline
 
-DATASET_SLUG: str = "cardiffnlp/tweet_eval"
-INSTANCE: str = "sentiment"
-
-
-dataset = datasets.load_dataset(DATASET_SLUG, name=INSTANCE)
-print(dataset)
+__all__ = ["neural", "pipeline"]
