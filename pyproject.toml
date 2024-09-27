@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "tweeteval-revisited"
+version = "0.1.0"
+description = ""
+authors = ["Simon Münker <muenker@uni-trier.de>"]
+license = "Apache-2.0"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+datasets = "^3.0.1"
+pydantic = "^2.9.2"
+torch = "^2.4.1"
+transformers = "^4.45.1"
+
+[tool.poetry.group.dev.dependencies]
+ruff = "^0.6.8"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
