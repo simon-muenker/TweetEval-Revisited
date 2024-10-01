@@ -8,7 +8,7 @@ import rich
 
 
 class ValueContainer(pydantic.BaseModel):
-    label: str
+    label: str | typing.Tuple[str, str]
     values: typing.List[float] = []
 
     def add(self, val: float):
@@ -36,8 +36,15 @@ class ValueContainer(pydantic.BaseModel):
 class Epoch(pydantic.BaseModel):
     n: int
 
-    train: ValueContainer = ValueContainer(label="train")
-    test: ValueContainer = ValueContainer(label="test")
+    observations: typing.Dict[typing.Tuple[str, str], ValueContainer] = {
+        label: ValueContainer(label=label)
+        for label in [
+            ("loss", "train"),
+            ("loss", "test"),
+            ("acc", "train"),
+            ("acc", "test"),
+        ]
+    }
 
     _start_time: datetime.datetime = pydantic.PrivateAttr(
         default_factory=datetime.datetime.now
@@ -53,11 +60,11 @@ class Epoch(pydantic.BaseModel):
         else:
             return datetime.datetime.now() - self._start_time
 
-    def add_loss_train(self, loss: float):
-        self.train.add(loss)
-
-    def add_loss_test(self, loss: float):
-        self.test.add(loss)
+    def add_observation(
+        self, split: typing.Literal["train", "test"], loss: float, metric: float
+    ):
+        self.observations[("loss", split)].add(loss)
+        self.observations[("acc", split)].add(metric)
 
     def end(self):
         self._end_time = datetime.datetime.now()
@@ -66,14 +73,20 @@ class Epoch(pydantic.BaseModel):
     def log(self):
         rich.print(
             f"[{self.n:03d}]\t",
-            f"loss(train): {self.train.mean:2.4f}\t",
-            f"loss(test): {self.test.mean:2.4f}\t",
+            *[
+                f"{label[0]}({label[1]}): {data.mean:2.4f}\t"
+                for label, data in self.observations.items()
+            ],
             f"duration: {self.duration}",
         )
 
     def to_df(self) -> pandas.DataFrame:
-        return self.train.to_series(self.n).join(
-            self.test.to_series(self.n), how="outer"
+        return pandas.concat(
+            [
+                data.to_series(self.n).rename(label)
+                for label, data in self.observations.items()
+            ],
+            axis=1,
         )
 
 
@@ -99,3 +112,6 @@ class Tracker(pydantic.BaseModel):
 
     def to_df(self) -> pandas.DataFrame:
         return pandas.DataFrame(self.model_dump()["epochs"])
+
+
+__all__ = ["Tracker", "Epoch", "ValueContainer"]

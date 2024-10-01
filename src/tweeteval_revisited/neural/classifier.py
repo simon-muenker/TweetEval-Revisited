@@ -1,20 +1,18 @@
-import typing
+import logging
 
 import pydantic
 import torch
 
+from tweeteval_revisited.neural import util
+
 
 class ClassifierArgs(pydantic.BaseModel):
-    encoder_num_layers: int = 8
-    encoder_layers_config: typing.Dict = dict(
-        nhead=4, batch_first=True, dtype=torch.bfloat16
-    )
+    num_layers: int = 8
+    num_heads: int = 4
 
-    lstm_config: typing.Dict = dict(
-        num_layers=4, batch_first=True, dtype=torch.bfloat16
-    )
+    dtype: torch.dtype = torch.bfloat16
 
-    linear_config: typing.Dict = dict(dtype=torch.bfloat16)
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
 
 
 class Classifier(torch.nn.Module):
@@ -26,19 +24,31 @@ class Classifier(torch.nn.Module):
 
         self.encoder = torch.nn.TransformerEncoder(
             torch.nn.TransformerEncoderLayer(
-                d_model=input_size, **self.args.encoder_layers_config
+                d_model=input_size,
+                batch_first=True,
+                nhead=args.num_heads,
+                dtype=args.dtype,
             ),
-            num_layers=self.args.encoder_num_layers,
+            num_layers=self.args.num_layers,
         )
-        self.lstm = torch.nn.LSTM(
-            input_size=input_size, hidden_size=input_size, **self.args.lstm_config
-        )
-        self.linear = torch.nn.Linear(input_size, out_size, **self.args.linear_config)
+        self.linear = torch.nn.Linear(input_size, out_size, dtype=args.dtype)
 
-    def forward(self, batch: torch.Tensor) -> torch.Tensor:
-        hidden: torch.Tensor = self.encoder(batch)
-        _, (hidden, _) = self.lstm(hidden)
-        hidden = hidden[-1]
+        for msg in (
+            f"trainable params: {util.get_model_trainable_params(self):,d}",
+            f"memory usage: {util.calculate_model_memory_usage(self)}",
+        ):
+            logging.info(f"CLASSIFIER | {msg}")
+
+    def forward(self, batch: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        logging.debug(f"CLASSIFIER | forward input: {batch.size()}")
+
+        hidden: torch.Tensor = self.encoder(
+            batch, src_key_padding_mask=mask.to(torch.bfloat16)
+        )
+        hidden = hidden[:, 0, :]
+        logging.debug(f"CLASSIFIER | encoder hidden: {hidden.size()}")
+
         hidden = self.linear(hidden)
+        logging.debug(f"CLASSIFIER | linear output: {hidden.size()}")
 
         return hidden

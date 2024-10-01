@@ -4,6 +4,11 @@ ruff:
 	@poetry run ruff format
 
 
-.PHONY: run
-run:
-	@poetry run python src/tweeteval_revisited/
+.PHONY: baseline
+baseline:
+	@poetry run python experiments/prompt_baseline.py
+
+
+.PHONY: finetune
+finetune:
+	@poetry run python experiments/finetuned_head.py

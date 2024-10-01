@@ -1,24 +1,21 @@
 import pathlib
 import typing
+import logging
 
 import datasets
 
 import pydantic
-import rich
-import rich.progress
+import sklearn
+import sklearn.metrics
 import torch
 
 from tweeteval_revisited import neural
-from tweeteval_revisited.pipeline.tracker import Epoch, Tracker
+from tweeteval_revisited.pipeline import tracking, util
 
 
 class PipelineArgs(pydantic.BaseModel):
     epochs: int = 50
     batch_size: int = 64
-
-    optimizer_config: typing.Dict = dict(
-        lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=1e-2
-    )
 
     report_path: pathlib.Path = pathlib.Path(".")
 
@@ -27,77 +24,75 @@ class Pipeline(pydantic.BaseModel):
     data_train: datasets.Dataset
     data_test: datasets.Dataset
 
-    encoder: neural.Encoder
+    generator: neural.Generator
     classifier: neural.Classifier
     objective: torch.nn.Module
+    optimizer: torch.optim.Optimizer
+    collate_fn: typing.Callable
 
     args: PipelineArgs = PipelineArgs()
     model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
 
     def __call__(self):
-        optimizer = torch.optim.AdamW(
-            self.classifier.parameters(), **self.args.optimizer_config
-        )
+        tracker: tracking.Tracker = tracking.Tracker(report_path=self.args.report_path)
 
-        tracker: Tracker = Tracker(report_path=self.args.report_path)
+        try:
+            for n in range(1, self.args.epochs + 1):
+                epoch: tracking.Epoch = tracking.Epoch(n=n)
 
-        for n in range(1, self.args.epochs + 1):
-            epoch = Epoch(n=n)
-
-            for batch in rich.progress.track(
-                self._get_data_loader(self.data_train), "Training ...", transient=True
-            ):
-                epoch.add_loss_train(self._step(*batch, optimizer))
-
-            with torch.no_grad():
-                for batch in rich.progress.track(
-                    self._get_data_loader(self.data_test), "Testing ...", transient=True
+                for batch in self._get_data_loader(
+                    self.data_train, desc="training ..."
                 ):
-                    epoch.add_loss_test(self._step(*batch))
+                    epoch.add_observation("train", *self._step(*batch, optimize=True))
 
-            tracker.add(epoch)
+                with torch.no_grad():
+                    for batch in self._get_data_loader(
+                        self.data_test, desc="testing ..."
+                    ):
+                        epoch.add_observation("test", *self._step(*batch))
+
+                tracker.add(epoch)
+
+        except KeyboardInterrupt:
+            logging.warning("training interrupted by user. shutting down.")
 
     def _step(
         self,
         src: typing.List[str],
         tgt: torch.Tensor,
-        optimizer: torch.optim.Optimizer | None = None,
-    ):
+        optimize: bool = False,
+    ) -> typing.Tuple[float, float]:
         with torch.no_grad():
-            _, embeds = self.encoder.embed(src)
+            _, embeds, attention_mask = self.generator.embed(src)
+            targets = torch.tensor(
+                tgt, device=next(self.classifier.parameters()).device
+            )
 
-        preds = self.classifier.forward(embeds)
+        with torch.enable_grad():
+            preds = self.classifier.forward(embeds, mask=attention_mask)
+            loss: torch.Tensor = self.objective(preds, targets)
 
-        loss: torch.Tensor = self.objective(preds, tgt)
+            if optimize:
+                self._optimize(loss)
 
-        if optimizer:
-            self._optimize(loss, optimizer)
-
-        return loss.item()
-
-    def _optimize(self, loss: torch.Tensor, optimizer: torch.optim.Optimizer):
-        loss.backward()
-        optimizer.step()
-        optimizer.zero_grad()
-
-    def _get_data_loader(self, dataset: torch.utils.data.Dataset):
-        return torch.utils.data.DataLoader(
-            dataset,
-            shuffle=True,
-            batch_size=self.args.batch_size,
-            collate_fn=self._collate,
+        metric: float = sklearn.metrics.accuracy_score(
+            targets.cpu(), torch.argmax(preds, dim=1).cpu()
         )
 
-    def _collate(
-        self, batch: typing.List[typing.Dict]
-    ) -> typing.Tuple[typing.List[str], torch.Tensor]:
-        src, tgt = [], []
+        return loss.item(), metric
 
-        for sample in batch:
-            src.append(sample["text"])
-            tgt.append(sample["label"])
+    def _optimize(self, loss: torch.Tensor):
+        loss.backward()
+        self.optimizer.step()
+        self.optimizer.zero_grad()
 
-        return src, torch.tensor(tgt, device=next(self.classifier.parameters()).device)
+    def _get_data_loader(self, dataset: datasets.Dataset, desc: str) -> typing.Dict:
+        return util.get_data_loader(
+            dataset,
+            desc=desc,
+            batch_size=self.args.batch_size,
+            collate_fn=self.collate_fn,
+        )
 
 
-__all__ = ["Pipeline", "PipelineArgs"]
+__all__ = ["Pipeline", "PipelineArgs", "tracking", "util"]
